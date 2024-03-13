@@ -35,8 +35,181 @@ Google Colab with NVCC Compiler
 12.	Reset the device: Reset the device using cudaDeviceReset to ensure that all resources are cleaned up before the program exits.
 
 ## PROGRAM:
-TYPE YOUR CODE HERE
+```
+%%cuda
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include <sys/time.h>
 
+#ifndef _COMMON_H
+#define _COMMON_H
+
+#define CHECK(call)                                                            \
+{                                                                              \
+    const cudaError_t error = call;                                            \
+    if (error != cudaSuccess)                                                  \
+    {                                                                          \
+        fprintf(stderr, "Error: %s:%d, ", __FILE__, __LINE__);                 \
+        fprintf(stderr, "code: %d, reason: %s\n", error,                       \
+                cudaGetErrorString(error));                                    \
+        exit(1);                                                               \
+    }                                                                          \
+}
+
+inline double seconds()
+{
+    struct timeval tp;
+    struct timezone tzp;
+    int i = gettimeofday(&tp, &tzp);
+    return ((double)tp.tv_sec + (double)tp.tv_usec * 1.e-6);
+}
+
+#endif // _COMMON_H
+
+void initialData(int *ip, const int size)
+{
+    for(int i = 0; i < size; i++)
+    {
+        ip[i] = rand() & 0xFF; // Random integer between 0 and 255
+    }
+}
+
+void sumMatrixOnHost(const int *A, const int *B, int *C, const int nx, const int ny)
+{
+    for (int iy = 0; iy < ny; iy++)
+    {
+        for (int ix = 0; ix < nx; ix++)
+        {
+            int idx = iy * nx + ix;
+            C[idx] = A[idx] + B[idx];
+        }
+    }
+}
+
+void checkResult(const int *hostRef, const int *gpuRef, const int N)
+{
+    bool match = true;
+
+    for (int i = 0; i < N; i++)
+    {
+        if (hostRef[i] != gpuRef[i])
+        {
+            match = false;
+            printf("host %d gpu %d\n", hostRef[i], gpuRef[i]);
+            break;
+        }
+    }
+
+    if (match)
+        printf("Arrays match.\n\n");
+    else
+        printf("Arrays do not match.\n\n");
+}
+
+// grid 2D block 2D
+__global__ void sumMatrixOnGPU2D(const int *A, const int *B, int *C, const int NX, const int NY)
+{
+    unsigned int ix = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int iy = blockIdx.y * blockDim.y + threadIdx.y;
+    unsigned int idx = iy * NX + ix;
+
+    if (ix < NX && iy < NY)
+    {
+        C[idx] = A[idx] + B[idx];
+    }
+}
+
+int main(int argc, char **argv)
+{
+    printf("%s Starting...\n", argv[0]);
+
+    // Set up device
+    int dev = 0;
+    cudaDeviceProp deviceProp;
+    CHECK(cudaGetDeviceProperties(&deviceProp, dev));
+    printf("Using Device %d: %s\n", dev, deviceProp.name);
+    CHECK(cudaSetDevice(dev));
+
+    // Set up data size of matrix
+    int nx = 1 << 14;
+    int ny = 1 << 14;
+
+    int nxy = nx * ny;
+    int nBytes = nxy * sizeof(int);
+    printf("Matrix size: nx %d ny %d\n", nx, ny);
+
+    // Malloc host memory
+    int *h_A, *h_B, *hostRef, *gpuRef;
+    h_A = (int *)malloc(nBytes);
+    h_B = (int *)malloc(nBytes);
+    hostRef = (int *)malloc(nBytes);
+    gpuRef = (int *)malloc(nBytes);
+
+    // Initialize data at host side
+    double iStart = seconds();
+    initialData(h_A, nxy);
+    initialData(h_B, nxy);
+    double iElaps = seconds() - iStart;
+    printf("Matrix initialization elapsed %f sec\n", iElaps);
+
+    memset(hostRef, 0, nBytes);
+    memset(gpuRef, 0, nBytes);
+
+    // Add matrix at host side for result checks
+    iStart = seconds();
+    sumMatrixOnHost(h_A, h_B, hostRef, nx, ny);
+    iElaps = seconds() - iStart;
+    printf("sumMatrixOnHost elapsed %f sec\n", iElaps);
+
+    // Malloc device global memory
+    int *d_MatA, *d_MatB, *d_MatC;
+    CHECK(cudaMalloc((void **)&d_MatA, nBytes));
+    CHECK(cudaMalloc((void **)&d_MatB, nBytes));
+    CHECK(cudaMalloc((void **)&d_MatC, nBytes));
+
+    // Transfer data from host to device
+    CHECK(cudaMemcpy(d_MatA, h_A, nBytes, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(d_MatB, h_B, nBytes, cudaMemcpyHostToDevice));
+
+    // Invoke kernel at host side
+    int dimx = 32;
+    int dimy = 32;
+    dim3 block(dimx, dimy);
+    dim3 grid((nx + block.x - 1) / block.x, (ny + block.y - 1) / block.y);
+
+    iStart = seconds();
+    sumMatrixOnGPU2D<<<grid, block>>>(d_MatA, d_MatB, d_MatC, nx, ny);
+    CHECK(cudaDeviceSynchronize());
+    iElaps = seconds() - iStart;
+    printf("sumMatrixOnGPU2D <<<(%d,%d), (%d,%d)>>> elapsed %f sec\n", grid.x,
+           grid.y,
+           block.x, block.y, iElaps);
+    // Check kernel error
+    CHECK(cudaGetLastError());
+
+    // Copy kernel result back to host side
+    CHECK(cudaMemcpy(gpuRef, d_MatC, nBytes, cudaMemcpyDeviceToHost));
+
+    // Check device results
+    checkResult(hostRef, gpuRef, nxy);
+
+    // Free device global memory
+    CHECK(cudaFree(d_MatA));
+    CHECK(cudaFree(d_MatB));
+    CHECK(cudaFree(d_MatC));
+
+    // Free host memory
+    free(h_A);
+    free(h_B);
+    free(hostRef);
+    free(gpuRef);
+
+    // Reset device
+    CHECK(cudaDeviceReset());
+
+    return (0);
+}
+```
 ## OUTPUT:
 SHOW YOUR OUTPUT HERE
 

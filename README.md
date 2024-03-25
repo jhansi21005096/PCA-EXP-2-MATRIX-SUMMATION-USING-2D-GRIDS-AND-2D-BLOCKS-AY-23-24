@@ -1,9 +1,7 @@
 # PCA-EXP-2-Matrix-Summation-using-2D-Grids-and-2D-Blocks-AY-23-24
-
-<h3>AIM:</h3>
-<h3>ENTER YOUR NAME</h3>
-<h3>ENTER YOUR REGISTER NO</h3>
-<h3>EX. NO</h3>
+<h3>ENTER YOUR NAME: K.Jhansi</h3>
+<h3>ENTER YOUR REGISTER NO:212221230045</h3>
+<h3>EX. NO:2 </h3>
 <h3>DATE</h3>
 <h1> <align=center> MATRIX SUMMATION WITH A 2D GRID AND 2D BLOCKS </h3>
 i.  Use the file sumMatrixOnGPU-2D-grid-2D-block.cu
@@ -458,6 +456,7 @@ int main(int argc, char **argv)
 
 ```
 ## OUTPUT:
+![output]()
 ![output]()
 
 ## RESULT:
